@@ -97,6 +97,12 @@ impl RuntimeBackend for Backend {
 
     fn set_epoch_deadline(_runtime: &mut Self::RuntimeState, _deadline: u64) {}
 
+    fn set_runtime_session(
+        _runtime: &mut Self::RuntimeState,
+        _session_id: u64,
+    ) {
+    }
+
     fn prepare_for_instantiation(runtime: &mut Self::RuntimeState) {
         runtime.import_callbacks.clear();
     }
@@ -216,6 +222,10 @@ impl RuntimeBackend for Backend {
         let wasm = Uint8Array::from(bytes);
         let _ = WebAssembly::Module::new(&wasm.into()).map_err(js_error)?;
         Ok(bytes.to_vec())
+    }
+
+    fn module_serialize(module: &Self::ModuleInner) -> Result<Vec<u8>> {
+        Ok(module.clone())
     }
 
     fn instantiate<T: 'static>(

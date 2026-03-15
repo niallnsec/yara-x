@@ -18,6 +18,9 @@
 //!    inside the browser's Wasm sandbox, this backend provides a custom
 //!    implementation wrapping the host environment's built-in JavaScript
 //!    `WebAssembly` APIs via `wasm-bindgen`.
+//! 3. **WASI Backend (`wasip1.rs`)**: Used by `wasm32-wasip1` builds with the
+//!    `wasip1-runtime` feature. It delegates execution to a host bridge defined
+//!    with WIT, which is implemented by the Go/wazero bindings.
 //!
 //! ## Unified Wasmtime-like Interface
 //!
@@ -42,16 +45,40 @@
 #[cfg(target_family = "wasm")]
 mod common;
 
+#[cfg(all(
+    target_family = "wasm",
+    feature = "wasip1-runtime",
+    not(all(target_arch = "wasm32", target_os = "wasi", target_env = "p1"))
+))]
+compile_error!("`wasip1-runtime` is only supported for wasm32-wasip1 targets");
+
 // Native builds execute generated WASM through Wasmtime.
 #[cfg(not(target_family = "wasm"))]
 mod native;
 
 // Browser builds execute generated WASM through the host WebAssembly runtime.
-#[cfg(target_family = "wasm")]
+#[cfg(all(target_family = "wasm", not(feature = "wasip1-runtime")))]
 mod browser;
+
+// wasm32-wasip1 builds delegate execution to the host bridge defined in WIT.
+#[cfg(all(
+    target_arch = "wasm32",
+    target_os = "wasi",
+    target_env = "p1",
+    feature = "wasip1-runtime"
+))]
+mod wasip1;
 
 #[cfg(not(target_family = "wasm"))]
 pub use native::*;
 
-#[cfg(target_family = "wasm")]
+#[cfg(all(target_family = "wasm", not(feature = "wasip1-runtime")))]
 pub use browser::*;
+
+#[cfg(all(
+    target_arch = "wasm32",
+    target_os = "wasi",
+    target_env = "p1",
+    feature = "wasip1-runtime"
+))]
+pub use wasip1::*;

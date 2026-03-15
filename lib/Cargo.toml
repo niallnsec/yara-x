@@ -143,6 +143,10 @@ pulley = ["wasmtime/pulley"]
 # scan. Notice that profiling itself has a noticeable impact on performance.
 rules-profiling = ["logging", "dep:quanta"]
 
+# Uses the WASI Preview 2-oriented host bridge while still producing a core
+# WebAssembly module for wasm32-wasip1. This is used by the Go/wazero bindings.
+wasip1-runtime = ["dep:wasip2", "dep:wit-bindgen"]
+
 crypto = [
     "dep:const-oid",
     "dep:der-parser",
@@ -390,6 +394,8 @@ wasmtime = { workspace = true, default-features = false, features = [
 [target.'cfg(target_family = "wasm")'.dependencies]
 js-sys = "0.3.90"
 wasm-bindgen = { workspace = true }
+wasip2 = { workspace = true, optional = true }
+wit-bindgen = { workspace = true, optional = true }
 # When compiling for WASM the `js` feature is needed. The dependency chain for
 # getrandom is: dsa -> num-bigint-dig -> rand -> rand_core -> getrandom. When
 # `dsa` gets upgraded to a newer version this may not be required anymore.

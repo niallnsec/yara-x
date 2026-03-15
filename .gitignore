@@ -9,6 +9,7 @@
 target
 js-wasm/dist
 js-wasm/pkg
+go-wasm/guest/release
 macros/target
 site/node_modules
 site/public

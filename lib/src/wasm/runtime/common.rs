@@ -56,6 +56,8 @@ pub(crate) trait RuntimeBackend:
 
     /// Updates the deadline used for interrupting long-running scans.
     fn set_epoch_deadline(runtime: &mut Self::RuntimeState, deadline: u64);
+    /// Associates the store with the runtime session currently in use.
+    fn set_runtime_session(runtime: &mut Self::RuntimeState, session_id: u64);
     /// Resets any per-instantiation state before creating a new instance.
     fn prepare_for_instantiation(runtime: &mut Self::RuntimeState);
     /// Clears any runtime state that should not survive store reuse.
@@ -103,6 +105,9 @@ pub(crate) trait RuntimeBackend:
         engine: &Engine,
         bytes: &[u8],
     ) -> Result<Self::ModuleInner>;
+
+    /// Serializes a module into bytes suitable for persistence.
+    fn module_serialize(module: &Self::ModuleInner) -> Result<Vec<u8>>;
 
     /// Instantiates `module` with the functions and externs in `linker`.
     fn instantiate<T: 'static>(
@@ -184,6 +189,11 @@ impl<T, B: RuntimeBackend> Store<T, B> {
     /// Sets the deadline used by the backend for interrupting execution.
     pub fn set_epoch_deadline(&mut self, deadline: u64) {
         B::set_epoch_deadline(&mut self.runtime, deadline);
+    }
+
+    /// Associates the store with a backend-specific runtime session.
+    pub fn set_runtime_session(&mut self, session_id: u64) {
+        B::set_runtime_session(&mut self.runtime, session_id);
     }
 
     /// Registers a callback for deadline expiration.
@@ -401,6 +411,12 @@ pub enum ValType {
 pub struct ValRaw(u64);
 
 impl ValRaw {
+    /// Creates a raw value from its underlying bits.
+    #[inline]
+    pub fn from_raw(raw: u64) -> Self {
+        Self(raw)
+    }
+
     /// Creates a raw value from an `i64`.
     #[inline]
     pub fn i64(value: i64) -> Self {
@@ -796,6 +812,11 @@ impl<B: RuntimeBackend> Module<B> {
     pub fn deserialize(engine: &Engine, bytes: &[u8]) -> Result<Self> {
         Self::from_binary(engine, bytes)
     }
+
+    /// Serializes the module into bytes suitable for persistence.
+    pub fn serialize(&self) -> Result<Vec<u8>> {
+        B::module_serialize(&self.inner)
+    }
 }
 
 /// An instantiated WebAssembly module ready for execution.
@@ -860,5 +881,35 @@ pub(crate) fn default_val(ty: ValType) -> Val {
         ValType::I64 => Val::I64(0),
         ValType::F32 => Val::F32(0),
         ValType::F64 => Val::F64(0),
+    }
+}
+
+/// Converts a typed value into its raw ABI representation.
+pub(crate) fn val_to_raw(value: Val) -> u64 {
+    match value {
+        Val::I32(v) => (v as u32) as u64,
+        Val::I64(v) => v as u64,
+        Val::F32(v) => v as u64,
+        Val::F64(v) => v,
+    }
+}
+
+/// Converts a raw ABI value into a typed value.
+pub(crate) fn raw_to_val(raw: u64, ty: ValType) -> Val {
+    match ty {
+        ValType::I32 => Val::I32(raw as u32 as i32),
+        ValType::I64 => Val::I64(raw as i64),
+        ValType::F32 => Val::F32(raw as u32),
+        ValType::F64 => Val::F64(raw),
+    }
+}
+
+/// Converts a trampoline value into the ABI representation used by a backend.
+pub(crate) fn valraw_to_raw(value: ValRaw, ty: ValType) -> u64 {
+    match ty {
+        ValType::I32 => value.get_i32() as u32 as u64,
+        ValType::I64 => value.get_i64() as u64,
+        ValType::F32 => value.get_f32() as u64,
+        ValType::F64 => value.get_f64(),
     }
 }
