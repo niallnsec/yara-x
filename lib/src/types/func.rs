@@ -31,6 +31,8 @@ use std::str::Chars;
 ///  b: bool
 ///  s: string
 ///  r: regexp
+///  p: pattern
+///  q: pattern set
 /// ```
 ///
 /// `<return type>` is a sequence of one or more of the characters above,
@@ -151,6 +153,8 @@ impl MangledFnName {
     fn next_type(&self, chars: &mut Peekable<Chars>) -> Option<TypeValue> {
         match chars.next() {
             Some('u') => Some(TypeValue::Unknown),
+            Some('p') => Some(TypeValue::unknown_pattern()),
+            Some('q') => Some(TypeValue::unknown_pattern_set()),
             Some('r') => Some(TypeValue::Regexp(None)),
             Some('f') => Some(TypeValue::unknown_float()),
             Some('b') => Some(TypeValue::unknown_bool()),
@@ -417,6 +421,22 @@ mod test {
                     ("a", TypeValue::unknown_bool()),
                     ("b", TypeValue::unknown_bool())
                 ],
+                TypeValue::unknown_bool()
+            )
+        );
+
+        assert_eq!(
+            MangledFnName::from("foo@a:p@b").unmangle(),
+            (
+                vec![("a", TypeValue::unknown_pattern())],
+                TypeValue::unknown_bool()
+            )
+        );
+
+        assert_eq!(
+            MangledFnName::from("foo@a:q@b").unmangle(),
+            (
+                vec![("a", TypeValue::unknown_pattern_set())],
                 TypeValue::unknown_bool()
             )
         );

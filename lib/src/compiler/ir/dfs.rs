@@ -312,6 +312,8 @@ pub(super) fn dfs_common(
             push_anchor(anchor, stack);
         }
 
+        Expr::PatternRef { .. } | Expr::PatternRefVar { .. } => {}
+
         Expr::PatternCount { range, .. }
         | Expr::PatternCountVar { range, .. } => {
             if let Some(range) = range {

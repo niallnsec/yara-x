@@ -75,7 +75,9 @@ impl<'ast> FuncSignatureParser<'ast> {
             "f32" | "f64" => Ok(Cow::Borrowed("f")),
             "bool" => Ok(Cow::Borrowed("b")),
 
-            "PatternId" | "RuleId" => Ok(Cow::Borrowed("i")),
+            "PatternId" => Ok(Cow::Borrowed("p")),
+            "PatternSetHandle" => Ok(Cow::Borrowed("q")),
+            "RuleId" => Ok(Cow::Borrowed("i")),
             "RegexId" => Ok(Cow::Borrowed("r")),
             "Rc" => Ok(Cow::Borrowed("i")),
             "RuntimeObjectHandle" => Ok(Cow::Borrowed("i")),
@@ -436,6 +438,18 @@ mod tests {
         };
 
         assert_eq!(parser.parse(&func).unwrap(), "@@i");
+
+        let func = parse_quote! {
+          fn foo(caller: &mut Caller<'_, ScanContext>, pattern: PatternId) -> i32 { 0 }
+        };
+
+        assert_eq!(parser.parse(&func).unwrap(), "@pattern:p@i");
+
+        let func = parse_quote! {
+          fn foo(caller: &mut Caller<'_, ScanContext>, set: PatternSetHandle) -> i32 { 0 }
+        };
+
+        assert_eq!(parser.parse(&func).unwrap(), "@set:q@i");
 
         let func = parse_quote! {
           fn foo(caller: &mut Caller<'_, ScanContext>) -> (i32, i32) { (0,0) }

@@ -10,6 +10,20 @@ use crate::errors::{SerializationError, VariableError};
 use crate::types::Type;
 use crate::{Compiler, Rules, Scanner, SourceCode, compile};
 
+fn assert_compile_error_contains(rule: &str, expected_parts: &[&str]) {
+    let err = Compiler::new()
+        .add_source(rule)
+        .expect_err("expected error")
+        .to_string();
+
+    for expected in expected_parts {
+        assert!(
+            err.contains(expected),
+            "expected compile error to contain `{expected}`, got:\n{err}"
+        );
+    }
+}
+
 #[test]
 fn serialization() {
     assert!(matches!(
@@ -1007,6 +1021,71 @@ fn wrong_type() {
   |
 3 |             rule test { condition: pe.version_info }
   |                                    ^^^^^^^^^^^^^^^ expression should be `bool`, but it is a map"
+    );
+}
+
+#[test]
+fn pattern_set_wrong_type() {
+    assert_compile_error_contains(
+        r#"
+        import "locus"
+        rule test {
+            strings:
+                $a = "a"
+                $b = "b"
+                $c = "c"
+            condition:
+                locus.any($a, $b, $c)
+        }"#,
+        &["error[E002]: wrong type", "`bool`", "`pattern_set`"],
+    );
+
+    assert_compile_error_contains(
+        r#"
+        import "locus"
+        rule test {
+            strings:
+                $a = "a"
+                $d = "d"
+            condition:
+                for any of ($a) : (
+                    locus.any($)
+                )
+        }"#,
+        &["error[E002]: wrong type", "`bool`", "`pattern_set`"],
+    );
+
+    assert_compile_error_contains(
+        r#"
+        import "locus"
+        rule test {
+            strings:
+                $a = "a"
+                $b = "b"
+                $c = "c"
+                $d = "d"
+            condition:
+                locus.any($a, $b, $c) > #d
+        }"#,
+        &["error[E002]: wrong type", "`pattern_set`"],
+    );
+}
+
+#[test]
+fn pattern_set_wrong_arguments() {
+    assert_compile_error_contains(
+        r#"
+        import "locus"
+        rule test {
+            strings:
+                $a = "a"
+                $b = "b"
+                $c = "c"
+                $d = "d"
+            condition:
+                locus.within(locus.any(locus.any($a, $b), $c), $d, 10)
+        }"#,
+        &["error[E004]: wrong arguments", "(pattern, pattern)"],
     );
 }
 

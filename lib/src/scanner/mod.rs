@@ -29,6 +29,8 @@ use crate::models::Rule;
 use crate::modules::{
     ModuleContext, ModuleError, RegisteredModule, module_by_name,
 };
+pub(crate) use crate::scanner::context::PatternSet;
+pub(crate) use crate::scanner::context::PatternSetHandle;
 pub(crate) use crate::scanner::context::RuntimeObject;
 pub(crate) use crate::scanner::context::RuntimeObjectHandle;
 pub(crate) use crate::scanner::context::ScanContext;
@@ -37,6 +39,7 @@ use crate::scanner::context::{
     create_wasm_store_and_ctx, create_wasm_store_and_ctx_with_session,
 };
 pub(crate) use crate::scanner::matches::Match;
+pub(crate) use crate::scanner::matches::MatchList;
 use crate::types::{Struct, TypeValue};
 use crate::variables::VariableError;
 use crate::wasm::MATCHING_RULES_BITMAP_BASE;

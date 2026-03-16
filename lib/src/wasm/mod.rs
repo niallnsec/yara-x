@@ -90,7 +90,7 @@ use smallvec::{SmallVec, smallvec};
 use yara_x_macros::wasm_export;
 
 use crate::compiler::{LiteralId, PatternId, RegexId, RuleId};
-use crate::scanner::{RuntimeObjectHandle, ScanContext};
+use crate::scanner::{PatternSetHandle, RuntimeObjectHandle, ScanContext};
 use crate::types::{
     Array, Func, FuncSignature, Map, Struct, TypeValue, Value,
 };
@@ -350,6 +350,13 @@ impl WasmArg<PatternId> for ValRaw {
     }
 }
 
+impl WasmArg<PatternSetHandle> for ValRaw {
+    #[inline]
+    fn raw_into(self, _: &mut ScanContext) -> PatternSetHandle {
+        PatternSetHandle::from(self.get_i64())
+    }
+}
+
 impl WasmArg<LiteralId> for ValRaw {
     #[inline]
     fn raw_into(self, _: &mut ScanContext) -> LiteralId {
@@ -509,6 +516,16 @@ impl WasmResult for RuntimeObjectHandle {
     }
 }
 
+impl WasmResult for PatternSetHandle {
+    fn values(self, _: &mut ScanContext) -> WasmResultArray<ValRaw> {
+        smallvec![ValRaw::i64(self.into())]
+    }
+
+    fn types() -> WasmResultArray<ValType> {
+        smallvec![ValType::I64]
+    }
+}
+
 impl WasmResult for Rc<BString> {
     fn values(self, ctx: &mut ScanContext) -> WasmResultArray<ValRaw> {
         let s = RuntimeString::Rc(self);
@@ -605,6 +622,8 @@ fn type_id_to_wasmtime(
         return &[ValType::I32];
     } else if type_id == TypeId::of::<PatternId>() {
         return &[ValType::I32];
+    } else if type_id == TypeId::of::<PatternSetHandle>() {
+        return &[ValType::I64];
     } else if type_id == TypeId::of::<RuleId>() {
         return &[ValType::I32];
     } else if type_id == TypeId::of::<RegexId>() {
@@ -704,6 +723,9 @@ impl_wasm_exported_fn!(WasmExportedFn1 A1);
 impl_wasm_exported_fn!(WasmExportedFn2 A1 A2);
 impl_wasm_exported_fn!(WasmExportedFn3 A1 A2 A3);
 impl_wasm_exported_fn!(WasmExportedFn4 A1 A2 A3 A4);
+impl_wasm_exported_fn!(WasmExportedFn5 A1 A2 A3 A4 A5);
+impl_wasm_exported_fn!(WasmExportedFn6 A1 A2 A3 A4 A5 A6);
+impl_wasm_exported_fn!(WasmExportedFn7 A1 A2 A3 A4 A5 A6 A7);
 
 /// Table with identifiers of variables and memories shared by the WASM
 /// module with the host.

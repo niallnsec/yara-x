@@ -451,6 +451,18 @@ impl ScanContext<'_, '_> {
         obj_ref
     }
 
+    pub(crate) fn store_pattern_set(
+        &mut self,
+        pattern_ids: Vec<PatternId>,
+    ) -> PatternSetHandle {
+        let pattern_set = Rc::new(PatternSet::new(pattern_ids));
+        let obj_ref =
+            RuntimeObjectHandle(Rc::<PatternSet>::as_ptr(&pattern_set) as i64);
+        self.runtime_objects
+            .insert_full(obj_ref, RuntimeObject::PatternSet(pattern_set));
+        PatternSetHandle(obj_ref)
+    }
+
     pub(crate) fn store_string(
         &mut self,
         s: Rc<BString>,
@@ -2178,6 +2190,7 @@ pub(crate) enum RuntimeObject {
     Struct(Rc<Struct>),
     Array(Rc<Array>),
     Map(Rc<Map>),
+    PatternSet(Rc<PatternSet>),
     String(Rc<BString>),
 }
 
@@ -2209,6 +2222,33 @@ impl RuntimeObject {
             panic!("calling `as_map` in a RuntimeObject that is not a map")
         }
     }
+
+    pub fn as_pattern_set(&self) -> Rc<PatternSet> {
+        if let Self::PatternSet(pattern_set) = self {
+            pattern_set.clone()
+        } else {
+            panic!(
+                "calling `as_pattern_set` in a RuntimeObject that is not a pattern set"
+            )
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PatternSet {
+    pattern_ids: Vec<PatternId>,
+}
+
+impl PatternSet {
+    pub fn new(mut pattern_ids: Vec<PatternId>) -> Self {
+        pattern_ids.sort_unstable();
+        pattern_ids.dedup();
+        Self { pattern_ids }
+    }
+
+    pub fn pattern_ids(&self) -> &[PatternId] {
+        self.pattern_ids.as_slice()
+    }
 }
 
 /// A runtime object handle is an opaque integer value that identifies a
@@ -2229,6 +2269,28 @@ impl From<RuntimeObjectHandle> for i64 {
 impl From<i64> for RuntimeObjectHandle {
     fn from(value: i64) -> Self {
         Self(value)
+    }
+}
+
+/// An opaque handle that identifies a runtime pattern set.
+#[derive(Copy, Clone, Hash, Eq, PartialEq, Default)]
+pub(crate) struct PatternSetHandle(RuntimeObjectHandle);
+
+impl From<PatternSetHandle> for i64 {
+    fn from(value: PatternSetHandle) -> Self {
+        value.0.into()
+    }
+}
+
+impl From<i64> for PatternSetHandle {
+    fn from(value: i64) -> Self {
+        Self(RuntimeObjectHandle::from(value))
+    }
+}
+
+impl From<PatternSetHandle> for RuntimeObjectHandle {
+    fn from(value: PatternSetHandle) -> Self {
+        value.0
     }
 }
 

@@ -142,6 +142,7 @@ pub fn error_enum_macro_derive(input: TokenStream) -> TokenStream {
 /// - `RuntimeString`
 /// - `RuleId`
 /// - `PatternId`
+/// - `PatternSetHandle`
 /// - `Rc<Struct>`
 /// - `Rc<Map>`
 /// - `Rc<Array>`

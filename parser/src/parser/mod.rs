@@ -330,6 +330,30 @@ impl<'src> ParserImpl<'src> {
         self.tokens.peek_token(token_pos)
     }
 
+    /// Returns the N-th non-trivia token, without consuming any token.
+    fn peek_non_trivia_n(&mut self, n: usize) -> Option<&Token> {
+        let mut i = 0;
+        let mut seen = 0;
+
+        let token_pos = loop {
+            match self.tokens.peek_token(i) {
+                Some(token) => {
+                    if token.is_trivia() {
+                        i += 1;
+                    } else if seen == n {
+                        break i;
+                    } else {
+                        seen += 1;
+                        i += 1;
+                    }
+                }
+                None => return None,
+            }
+        };
+
+        self.tokens.peek_token(token_pos)
+    }
+
     /// Consumes the next token and returns it. The consumed token is also
     /// appended to the output.
     ///
@@ -1568,7 +1592,8 @@ impl ParserImpl<'_> {
                 })
                 .alt(|p| {
                     p.primary_expr().zero_or_more(|p| {
-                        p.expect_d(t!(DOT), DESC).then(Self::primary_expr)
+                        p.expect_d(t!(DOT), DESC)
+                            .then(Self::dotted_primary_expr)
                     })
                 })
                 .end_alt()
@@ -1597,6 +1622,33 @@ impl ParserImpl<'_> {
             .alt(|p| p.expect(t!(IDENT)))
             .end_alt()
             .end()
+    }
+
+    /// Parses a primary expression after a `.` token.
+    fn dotted_primary_expr(&mut self) -> &mut Self {
+        let is_any_func_call =
+            matches!(self.peek_non_trivia_n(0), Some(Token::ANY_KW(_)))
+                && matches!(
+                    self.peek_non_trivia_n(1),
+                    Some(Token::L_PAREN(_))
+                );
+
+        if is_any_func_call {
+            self.begin(PRIMARY_EXPR)
+                .begin(FUNC_CALL)
+                .expect(t!(ANY_KW))
+                .expect(t!(L_PAREN))
+                .opt(|p| {
+                    p.boolean_expr().zero_or_more(|p| {
+                        p.expect(t!(COMMA)).then(Self::boolean_expr)
+                    })
+                })
+                .expect(t!(R_PAREN))
+                .end()
+                .end()
+        } else {
+            self.primary_expr()
+        }
     }
 
     /// Parses `for` expression.

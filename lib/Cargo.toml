@@ -223,6 +223,9 @@ lnk-module = [
     "dep:nom",
 ]
 
+# The `locus` module helps expressing proximity relationships between matches.
+locus-module = []
+
 # The `macho` module parses Mach-O files.
 macho-module = [
     "crypto",
@@ -298,6 +301,7 @@ default-modules = [
     "dotnet-module",
     "elf-module",
     "lnk-module",
+    "locus-module",
     "macho-module",
     "math-module",
     "msi-module",

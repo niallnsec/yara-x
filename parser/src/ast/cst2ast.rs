@@ -1556,7 +1556,11 @@ where
     }
 
     fn identifier(&mut self) -> Result<Ident<'src>, BuilderError> {
-        let span = self.expect(IDENT)?;
+        let span = match self.peek() {
+            Event::Token { kind: IDENT, .. } => self.expect(IDENT)?,
+            Event::Token { kind: ANY_KW, .. } => self.expect(ANY_KW)?,
+            _ => unreachable!(),
+        };
         Ok(Ident { name: self.get_source_str(&span)?, span })
     }
 

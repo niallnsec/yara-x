@@ -295,6 +295,8 @@ fn emit_expr(
 ) {
     match ir.get(expr) {
         Expr::Const(type_value) => match type_value {
+            TypeValue::Pattern(_) => unreachable!(),
+            TypeValue::PatternSet => unreachable!(),
             TypeValue::Integer { value: Const(value), .. } => {
                 instr.i64_const(*value);
             }
@@ -405,6 +407,12 @@ fn emit_expr(
                             }
                             ctx.lookup_list.clear();
                         }
+                        TypeValue::Pattern(_) => {
+                            unreachable!();
+                        }
+                        TypeValue::PatternSet => {
+                            unreachable!();
+                        }
                         TypeValue::Regexp(_) => {
                             // The value of an identifier can't be a regular
                             // expression.
@@ -427,6 +435,10 @@ fn emit_expr(
 
         Expr::PatternMatch { .. } | Expr::PatternMatchVar { .. } => {
             emit_pattern_match(ctx, ir, expr, instr);
+        }
+
+        Expr::PatternRef { .. } | Expr::PatternRefVar { .. } => {
+            emit_pattern_ref(ctx, ir, expr, instr);
         }
 
         Expr::PatternCount { .. } | Expr::PatternCountVar { .. } => {
@@ -694,6 +706,26 @@ fn emit_expr(
         },
 
         Expr::FuncCall(func_call) => {
+            let has_pattern_args =
+                if func_call.signature().method_of().is_some() {
+                    func_call
+                        .signature
+                        .args
+                        .iter()
+                        .skip(1)
+                        .any(|(_, arg)| arg.ty() == Type::Pattern)
+                } else {
+                    func_call
+                        .signature
+                        .args
+                        .iter()
+                        .any(|(_, arg)| arg.ty() == Type::Pattern)
+                };
+
+            if has_pattern_args {
+                emit_lazy_call_to_search_for_patterns(ctx, instr);
+            }
+
             // If this is method call, the target object (self or this in some
             // programming languages) is the first argument.
             if let Some(obj) = func_call.object {
@@ -1090,6 +1122,33 @@ fn emit_pattern_match(
                 ctx.function_id(wasm::export__is_pat_match_in.mangled_name),
             );
         }
+    }
+}
+
+fn emit_pattern_ref(
+    ctx: &mut EmitContext,
+    ir: &IR,
+    expr: ExprId,
+    instr: &mut InstrSeqBuilder,
+) {
+    match ir.get(expr) {
+        Expr::PatternRef { pattern } => {
+            instr.i32_const(ctx.pattern_id(*pattern).into());
+        }
+        Expr::PatternRefVar { symbol } => match symbol.as_ref() {
+            Symbol::Var { var, .. } => {
+                load_var(ctx, instr, *var);
+                match var.ty() {
+                    Type::Integer => {
+                        instr.unop(UnaryOp::I32WrapI64);
+                    }
+                    Type::Pattern => {}
+                    _ => unreachable!(),
+                }
+            }
+            _ => unreachable!(),
+        },
+        _ => unreachable!(),
     }
 }
 
@@ -2460,14 +2519,19 @@ fn set_var<B>(
     B: FnOnce(&mut EmitContext, &mut InstrSeqBuilder),
 {
     let (store_kind, alignment) = match var.ty() {
-        Type::Bool => (StoreKind::I32 { atomic: false }, size_of::<i32>()),
+        Type::Bool | Type::Pattern => {
+            (StoreKind::I32 { atomic: false }, size_of::<i32>())
+        }
         Type::Float => (StoreKind::F64, size_of::<f64>()),
         Type::Integer
         | Type::String
         | Type::Struct
         | Type::Array
         | Type::Map
-        | Type::Func => (StoreKind::I64 { atomic: false }, size_of::<i64>()),
+        | Type::Func
+        | Type::PatternSet => {
+            (StoreKind::I64 { atomic: false }, size_of::<i64>())
+        }
         _ => unreachable!(),
     };
 
@@ -2512,7 +2576,7 @@ fn set_vars<B>(
     // at the top of the stack.
     for var in vars.iter().rev() {
         match var.ty() {
-            Type::Bool => {
+            Type::Bool | Type::Pattern => {
                 // Pop the value and store it into temp variable.
                 instr.local_set(ctx.wasm_symbols.i32_tmp);
                 // Push the offset where the variable resides in memory.
@@ -2537,7 +2601,8 @@ fn set_vars<B>(
             | Type::Struct
             | Type::Array
             | Type::Map
-            | Type::Func => {
+            | Type::Func
+            | Type::PatternSet => {
                 instr.local_set(ctx.wasm_symbols.i64_tmp_a);
                 instr.i32_const(var.index() * Var::mem_size());
                 instr.local_get(ctx.wasm_symbols.i64_tmp_a);
@@ -2590,14 +2655,19 @@ fn load_var(ctx: &mut EmitContext, instr: &mut InstrSeqBuilder, var: Var) {
     instr.i32_const(var.index() * Var::mem_size());
 
     let (load_kind, alignment) = match var.ty() {
-        Type::Bool => (LoadKind::I32 { atomic: false }, size_of::<i32>()),
+        Type::Bool | Type::Pattern => {
+            (LoadKind::I32 { atomic: false }, size_of::<i32>())
+        }
         Type::Float => (LoadKind::F64, size_of::<i64>()),
         Type::Integer
         | Type::String
         | Type::Struct
         | Type::Array
         | Type::Map
-        | Type::Func => (LoadKind::I64 { atomic: false }, size_of::<i64>()),
+        | Type::Func
+        | Type::PatternSet => {
+            (LoadKind::I64 { atomic: false }, size_of::<i64>())
+        }
         _ => unreachable!(),
     };
 

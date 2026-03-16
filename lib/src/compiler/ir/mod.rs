@@ -2030,6 +2030,24 @@ impl IR {
         expr_id
     }
 
+    /// Creates a new [`Expr::PatternRef`]
+    pub fn pattern_ref(&mut self, pattern: PatternIdx) -> ExprId {
+        let expr_id = ExprId::from(self.nodes.len());
+        self.parents.push(ExprId::none());
+        self.nodes.push(Expr::PatternRef { pattern });
+        debug_assert_eq!(self.parents.len(), self.nodes.len());
+        expr_id
+    }
+
+    /// Creates a new [`Expr::PatternRefVar`]
+    pub fn pattern_ref_var(&mut self, symbol: Symbol) -> ExprId {
+        let expr_id = ExprId::from(self.nodes.len());
+        self.parents.push(ExprId::none());
+        self.nodes.push(Expr::PatternRefVar { symbol: Box::new(symbol) });
+        debug_assert_eq!(self.parents.len(), self.nodes.len());
+        expr_id
+    }
+
     /// Creates a new [`Expr::PatternLength`]
     pub fn pattern_length(
         &mut self,
@@ -2470,6 +2488,18 @@ impl Debug for IR {
                             anchor_str(anchor),
                             expr_hash
                         )?,
+                        Expr::PatternRef { pattern } => writeln!(
+                            f,
+                            "PATTERN_REF {:?} -- hash: {:#08x}",
+                            pattern,
+                            expr_hash
+                        )?,
+                        Expr::PatternRefVar { symbol } => writeln!(
+                            f,
+                            "PATTERN_REF {:?} -- hash: {:#08x}",
+                            symbol,
+                            expr_hash
+                        )?,
                         Expr::PatternCount { pattern, range } => writeln!(
                             f,
                             "PATTERN_COUNT {:?}{} -- hash: {:#08x}",
@@ -2720,6 +2750,12 @@ pub(crate) enum Expr {
 
     /// Array or dictionary lookup expression (e.g. `array[1]`, `dict["key"]`)
     Lookup(Box<Lookup>),
+
+    /// Pattern reference expression passed to a function (e.g. `$a`).
+    PatternRef { pattern: PatternIdx },
+
+    /// Pattern reference expression where the pattern is variable (e.g: `$`).
+    PatternRefVar { symbol: Box<Symbol> },
 }
 
 /// A lookup operation in an array or dictionary.
@@ -2913,6 +2949,12 @@ impl Hash for Expr {
                 symbol.hash(state);
                 discriminant(anchor).hash(state);
             }
+            Expr::PatternRef { pattern } => {
+                pattern.hash(state);
+            }
+            Expr::PatternRefVar { symbol } => {
+                symbol.hash(state);
+            }
             Expr::PatternCount { pattern, range } => {
                 pattern.hash(state);
                 discriminant(range).hash(state);
@@ -2993,6 +3035,7 @@ impl Expr {
         match self {
             Expr::Symbol(symbol)
             | Expr::PatternMatchVar { symbol, .. }
+            | Expr::PatternRefVar { symbol, .. }
             | Expr::PatternCountVar { symbol, .. }
             | Expr::PatternOffsetVar { symbol, .. }
             | Expr::PatternLengthVar { symbol, .. } => {
@@ -3130,6 +3173,8 @@ impl Expr {
                 replace_in_anchor(anchor)
             }
 
+            Expr::PatternRef { .. } | Expr::PatternRefVar { .. } => {}
+
             Expr::PatternCount { range, .. }
             | Expr::PatternCountVar { range, .. } => {
                 if let Some(range) = range {
@@ -3237,6 +3282,10 @@ impl Expr {
             | Expr::ForOf(_)
             | Expr::ForIn(_) => Type::Bool,
 
+            Expr::PatternRef { .. } | Expr::PatternRefVar { .. } => {
+                Type::Pattern
+            }
+
             Expr::Minus { is_float, .. } => {
                 if *is_float {
                     Type::Float
@@ -3308,6 +3357,10 @@ impl Expr {
             | Expr::OfPatternSet(_)
             | Expr::ForOf(_)
             | Expr::ForIn(_) => TypeValue::unknown_bool(),
+
+            Expr::PatternRef { .. } | Expr::PatternRefVar { .. } => {
+                TypeValue::unknown_pattern()
+            }
 
             Expr::Minus { is_float, .. } => {
                 if *is_float {

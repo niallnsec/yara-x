@@ -581,6 +581,10 @@ pub mod mods {
         /// The type of field, function argument or return value.
         #[derive(Clone, Debug, PartialEq)]
         pub enum Type {
+            /// A pattern reference.
+            Pattern,
+            /// A pattern set.
+            PatternSet,
             /// An integer.
             Integer,
             /// A float.
@@ -604,6 +608,8 @@ pub mod mods {
         impl From<&TypeValue> for Type {
             fn from(type_value: &TypeValue) -> Self {
                 match type_value {
+                    TypeValue::Pattern(_) => Type::Pattern,
+                    TypeValue::PatternSet => Type::PatternSet,
                     TypeValue::Bool { .. } => Type::Bool,
                     TypeValue::Float { .. } => Type::Float,
                     TypeValue::Integer { .. } => Type::Integer,

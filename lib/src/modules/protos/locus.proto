@@ -1,0 +1,14 @@
+syntax = "proto2";
+import "yara.proto";
+
+package locus;
+
+option (yara.module_options) = {
+  name : "locus"
+  root_message: "locus.Locus"
+  cargo_feature: "locus-module"
+};
+
+message Locus {
+  // This module contains only exported functions, and doesn't return any data
+}

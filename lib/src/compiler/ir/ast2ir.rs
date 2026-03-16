@@ -1010,8 +1010,12 @@ pub(in crate::compiler) fn rule_condition_from_ast(
     // Check if the value of the condition is known at compile time and
     // raise a warning if that's the case. Rules with constant conditions
     // are not very useful in real life, except for testing.
-    if let Some(value) =
-        ctx.ir.get(condition).type_value().cast_to_bool().try_as_bool()
+    if let Some(value) = ctx
+        .ir
+        .get(condition)
+        .type_value()
+        .try_cast_to_bool()
+        .and_then(|value| value.try_as_bool())
     {
         ctx.warnings.add(|| {
             warnings::InvariantBooleanExpression::build(
@@ -1037,7 +1041,9 @@ fn bool_expr_from_ast(
 ) -> Result<ExprId, CompileError> {
     let expr = expr_from_ast(ctx, ast)?;
 
-    match ctx.ir.get(expr).type_value() {
+    let type_value = ctx.ir.get(expr).type_value();
+
+    match type_value {
         TypeValue::Func(func) => {
             let help = func
                 .signatures()
@@ -1095,8 +1101,17 @@ fn bool_expr_from_ast(
                 None,
             ));
         }
-        type_value => {
+        _ if type_value.try_cast_to_bool().is_some() => {
             warn_if_not_bool(ctx, type_value.ty(), ast.span());
+        }
+        type_value => {
+            return Err(WrongType::build(
+                ctx.report_builder,
+                "`bool`".to_string(),
+                format!("`{}`", type_value.ty()),
+                ctx.report_builder.span_to_code_loc(ast.span()),
+                None,
+            ));
         }
     }
 
@@ -1344,7 +1359,8 @@ fn for_of_expr_from_ast(
         if let dfs::Event::Enter((_, expr, _)) = event
             && (matches!(
                 expr,
-                Expr::PatternCountVar { .. }
+                Expr::PatternRefVar { .. }
+                    | Expr::PatternCountVar { .. }
                     | Expr::PatternOffsetVar { .. }
                     | Expr::PatternLengthVar { .. }
             ) || (match expr {
@@ -1887,6 +1903,42 @@ fn func_call_from_ast(
     ctx: &mut CompileContext,
     func_call: &ast::FuncCall,
 ) -> Result<ExprId, CompileError> {
+    #[derive(Clone)]
+    enum PatternArgSpec {
+        Pattern(PatternIdx),
+        Var(Symbol),
+    }
+
+    impl PatternArgSpec {
+        fn into_expr(self, ctx: &mut CompileContext) -> ExprId {
+            match self {
+                Self::Pattern(pattern) => {
+                    ctx.current_rule_patterns[pattern.as_usize()]
+                        .disallow_fast_scan();
+                    ctx.ir.pattern_ref(pattern)
+                }
+                Self::Var(symbol) => ctx.ir.pattern_ref_var(symbol),
+            }
+        }
+    }
+
+    let pattern_arg_spec_from_expr =
+        |ctx: &CompileContext, expr: ExprId| match ctx.ir.get(expr) {
+            Expr::PatternMatch { pattern, anchor: MatchAnchor::None } => {
+                Some(PatternArgSpec::Pattern(*pattern))
+            }
+            Expr::PatternMatchVar { symbol, anchor: MatchAnchor::None } => {
+                Some(PatternArgSpec::Var(symbol.as_ref().clone()))
+            }
+            Expr::PatternRef { pattern } => {
+                Some(PatternArgSpec::Pattern(*pattern))
+            }
+            Expr::PatternRefVar { symbol } => {
+                Some(PatternArgSpec::Var(symbol.as_ref().clone()))
+            }
+            _ => None,
+        };
+
     let mut object = if let Some(obj) = &func_call.object {
         let expr = expr_from_ast(ctx, obj)?;
         // The one-shot symbol table is set according to the type of the object
@@ -1924,9 +1976,14 @@ fn func_call_from_ast(
 
     let arg_types: Vec<Type> =
         args.iter().map(|arg| ctx.ir.get(*arg).ty()).collect();
+    let pattern_args = args
+        .iter()
+        .map(|arg| pattern_arg_spec_from_expr(ctx, *arg))
+        .collect::<Vec<_>>();
 
     let mut expected_args = Vec::new();
     let mut matching_signature = None;
+    let mut matching_pattern_score = None;
 
     // Determine if any of the signatures for the called function matches
     // the provided arguments.
@@ -1943,12 +2000,35 @@ fn func_call_from_ast(
             signature.args.iter().map(|(_, arg)| arg.ty()).collect()
         };
 
-        if arg_types == expected_arg_types {
-            matching_signature = Some(signature);
-            break;
+        expected_args.push(expected_arg_types.clone());
+
+        if arg_types.len() != expected_arg_types.len() {
+            continue;
         }
 
-        expected_args.push(expected_arg_types);
+        let mut pattern_score = 0;
+        let types_match =
+            arg_types.iter().zip(expected_arg_types.iter()).enumerate().all(
+                |(index, (actual, expected))| {
+                    if actual == expected {
+                        true
+                    } else if *expected == Type::Pattern
+                        && pattern_args[index].is_some()
+                    {
+                        pattern_score += 1;
+                        true
+                    } else {
+                        false
+                    }
+                },
+            );
+
+        if types_match
+            && matching_pattern_score.is_none_or(|score| pattern_score > score)
+        {
+            matching_signature = Some(signature.clone());
+            matching_pattern_score = Some(pattern_score);
+        }
     }
 
     // No matching signature was found, that means that the arguments
@@ -1977,6 +2057,32 @@ fn func_call_from_ast(
     }
 
     let matching_signature = matching_signature.unwrap();
+    let expected_arg_types: Vec<Type> =
+        if matching_signature.method_of().is_some() {
+            matching_signature
+                .args
+                .iter()
+                .skip(1)
+                .map(|(_, arg)| arg.ty())
+                .collect()
+        } else {
+            matching_signature.args.iter().map(|(_, arg)| arg.ty()).collect()
+        };
+
+    let args = args
+        .into_iter()
+        .zip(pattern_args)
+        .zip(expected_arg_types)
+        .map(|((arg, pattern_arg), expected_type)| {
+            if expected_type == Type::Pattern
+                && ctx.ir.get(arg).ty() != Type::Pattern
+            {
+                pattern_arg.unwrap().into_expr(ctx)
+            } else {
+                arg
+            }
+        })
+        .collect();
 
     // The object is necessary only when this is a method call, if this
     // is a function call no object is required.

@@ -12,6 +12,7 @@ pub mod gti_score;
 pub mod hash;
 pub mod hunting_gti_score;
 pub mod lnk;
+pub mod locus;
 pub mod macho;
 pub mod magic;
 pub mod math;

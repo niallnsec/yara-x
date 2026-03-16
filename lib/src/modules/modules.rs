@@ -15,6 +15,8 @@ mod elf;
 mod hash;
 #[cfg(feature = "lnk-module")]
 mod lnk;
+#[cfg(feature = "locus-module")]
+mod locus;
 #[cfg(feature = "macho-module")]
 mod macho;
 #[cfg(feature = "magic-module")]

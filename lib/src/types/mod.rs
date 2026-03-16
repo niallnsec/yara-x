@@ -8,6 +8,7 @@ use std::{mem, ptr};
 use walrus::ValType;
 use walrus::ir::InstrSeqType;
 
+use crate::compiler::PatternId;
 use crate::modules::protos::yara::enum_value_options::Value as EnumValue;
 use crate::symbols::{Symbol, SymbolLookup, SymbolTable};
 use crate::wasm::WasmExport;
@@ -40,6 +41,8 @@ pub(crate) enum Type {
     Array,
     Map,
     Func,
+    Pattern,
+    PatternSet,
 }
 
 impl Display for Type {
@@ -52,6 +55,8 @@ impl Debug for Type {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unknown => write!(f, "unknown"),
+            Self::Pattern => write!(f, "pattern"),
+            Self::PatternSet => write!(f, "pattern_set"),
             Self::Integer => write!(f, "integer"),
             Self::Float => write!(f, "float"),
             Self::Bool => write!(f, "boolean"),
@@ -68,6 +73,8 @@ impl Debug for Type {
 impl From<Type> for ValType {
     fn from(ty: Type) -> ValType {
         match ty {
+            Type::Pattern => ValType::I32,
+            Type::PatternSet => ValType::I64,
             Type::Integer => ValType::I64,
             Type::Float => ValType::F64,
             Type::Bool => ValType::I32,
@@ -199,6 +206,8 @@ pub(crate) enum TypeValue {
     Array(Rc<Array>),
     Map(Rc<Map>),
     Func(Rc<Func>),
+    Pattern(Option<PatternId>),
+    PatternSet,
 }
 
 /// Each of the constraints allowed for string types.
@@ -224,6 +233,10 @@ impl Hash for TypeValue {
         mem::discriminant(self).hash(state);
         match self {
             TypeValue::Unknown => {}
+            TypeValue::Pattern(v) => {
+                v.hash(state);
+            }
+            TypeValue::PatternSet => {}
             TypeValue::Integer { value, .. } => {
                 mem::discriminant(value).hash(state);
                 if let Value::Const(c) = value {
@@ -273,6 +286,8 @@ impl TypeValue {
     pub fn is_const(&self) -> bool {
         match self {
             TypeValue::Unknown => false,
+            TypeValue::Pattern(_) => false,
+            TypeValue::PatternSet => false,
             TypeValue::Integer { value, .. } => value.is_const(),
             TypeValue::Float { value } => value.is_const(),
             TypeValue::Bool { value } => value.is_const(),
@@ -293,6 +308,8 @@ impl TypeValue {
     /// the same fields and the type of each field matches.
     pub fn eq_type(&self, other: &Self) -> bool {
         match (self, other) {
+            (Self::Pattern(_), Self::Pattern(_)) => true,
+            (Self::PatternSet, Self::PatternSet) => true,
             (Self::Integer { .. }, Self::Integer { .. }) => true,
             (Self::Float { .. }, Self::Float { .. }) => true,
             (Self::String { .. }, Self::String { .. }) => true,
@@ -345,6 +362,8 @@ impl TypeValue {
     pub fn ty(&self) -> Type {
         match self {
             Self::Unknown => Type::Unknown,
+            Self::Pattern(_) => Type::Pattern,
+            Self::PatternSet => Type::PatternSet,
             Self::Integer { .. } => Type::Integer,
             Self::Float { .. } => Type::Float,
             Self::Bool { .. } => Type::Bool,
@@ -360,6 +379,8 @@ impl TypeValue {
     pub fn clone_without_value(&self) -> Self {
         match self {
             Self::Unknown => Self::Unknown,
+            Self::Pattern(_) => Self::unknown_pattern(),
+            Self::PatternSet => Self::unknown_pattern_set(),
             Self::Integer { .. } => Self::unknown_integer(),
             Self::Float { .. } => Self::unknown_float(),
             Self::Bool { .. } => Self::unknown_bool(),
@@ -372,56 +393,64 @@ impl TypeValue {
         }
     }
 
+    /// Tries to cast a [`TypeValue`] to [`TypeValue::Bool`].
+    ///
+    /// Only integers, floats, strings, and bools can be casted to bool.
+    pub fn try_cast_to_bool(&self) -> Option<Self> {
+        match self {
+            Self::Integer { value: Value::Unknown, .. } => {
+                Some(Self::Bool { value: Value::Unknown })
+            }
+            Self::Integer { value: Value::Var(i), .. } => {
+                Some(Self::Bool { value: Value::Var(*i != 0) })
+            }
+            Self::Integer { value: Value::Const(i), .. } => {
+                Some(Self::Bool { value: Value::Const(*i != 0) })
+            }
+
+            Self::Float { value: Value::Unknown } => {
+                Some(Self::Bool { value: Value::Unknown })
+            }
+            Self::Float { value: Value::Var(f) } => {
+                Some(Self::Bool { value: Value::Var(*f != 0.0) })
+            }
+            Self::Float { value: Value::Const(f) } => {
+                Some(Self::Bool { value: Value::Const(*f != 0.0) })
+            }
+
+            Self::String { value: Value::Unknown, .. } => {
+                Some(Self::Bool { value: Value::Unknown })
+            }
+            Self::String { value: Value::Var(s), .. } => {
+                Some(Self::Bool { value: Value::Var(!s.is_empty()) })
+            }
+            Self::String { value: Value::Const(s), .. } => {
+                Some(Self::Bool { value: Value::Const(!s.is_empty()) })
+            }
+
+            Self::Bool { value: Value::Unknown } => {
+                Some(Self::Bool { value: Value::Unknown })
+            }
+            Self::Bool { value: Value::Var(b) } => {
+                Some(Self::Bool { value: Value::Var(*b) })
+            }
+            Self::Bool { value: Value::Const(b) } => {
+                Some(Self::Bool { value: Value::Const(*b) })
+            }
+
+            _ => None,
+        }
+    }
+
     /// Casts a [`TypeValue`] to [`TypeValue::Bool`].
     ///
     /// # Panics
     ///
     /// If the [`TypeValue`] has a type that can't be casted to bool. Only
-    /// integers, floats, and strings and bools can be casted to bool.
+    /// integers, floats, strings, and bools can be casted to bool.
     pub fn cast_to_bool(&self) -> Self {
-        match self {
-            Self::Integer { value: Value::Unknown, .. } => {
-                Self::Bool { value: Value::Unknown }
-            }
-            Self::Integer { value: Value::Var(i), .. } => {
-                Self::Bool { value: Value::Var(*i != 0) }
-            }
-            Self::Integer { value: Value::Const(i), .. } => {
-                Self::Bool { value: Value::Const(*i != 0) }
-            }
-
-            Self::Float { value: Value::Unknown } => {
-                Self::Bool { value: Value::Unknown }
-            }
-            Self::Float { value: Value::Var(f) } => {
-                Self::Bool { value: Value::Var(*f != 0.0) }
-            }
-            Self::Float { value: Value::Const(f) } => {
-                Self::Bool { value: Value::Const(*f != 0.0) }
-            }
-
-            Self::String { value: Value::Unknown, .. } => {
-                Self::Bool { value: Value::Unknown }
-            }
-            Self::String { value: Value::Var(s), .. } => {
-                Self::Bool { value: Value::Var(!s.is_empty()) }
-            }
-            Self::String { value: Value::Const(s), .. } => {
-                Self::Bool { value: Value::Const(!s.is_empty()) }
-            }
-
-            Self::Bool { value: Value::Unknown } => {
-                Self::Bool { value: Value::Unknown }
-            }
-            Self::Bool { value: Value::Var(b) } => {
-                Self::Bool { value: Value::Var(*b) }
-            }
-            Self::Bool { value: Value::Const(b) } => {
-                Self::Bool { value: Value::Const(*b) }
-            }
-
-            _ => panic!("can not cast {self:?} to bool"),
-        }
+        self.try_cast_to_bool()
+            .unwrap_or_else(|| panic!("can not cast {self:?} to bool"))
     }
 
     pub fn as_array(&self) -> Rc<Array> {
@@ -510,6 +539,18 @@ impl TypeValue {
         } else {
             None
         }
+    }
+
+    /// Creates a new [`TypeValue`] consisting of an unknown pattern reference.
+    #[inline]
+    pub fn unknown_pattern() -> Self {
+        Self::Pattern(None)
+    }
+
+    /// Creates a new [`TypeValue`] consisting of an unknown pattern set.
+    #[inline]
+    pub fn unknown_pattern_set() -> Self {
+        Self::PatternSet
     }
 
     /// Creates a new [`TypeValue`] consisting of a variable integer.
@@ -627,6 +668,14 @@ impl Debug for TypeValue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Unknown => write!(f, "unknown"),
+            Self::Pattern(pattern_id) => {
+                if let Some(v) = pattern_id {
+                    write!(f, "pattern({v:?})")
+                } else {
+                    write!(f, "pattern(unknown)")
+                }
+            }
+            Self::PatternSet => write!(f, "pattern_set(unknown)"),
             Self::Bool { value } => {
                 if let Some(v) = value.extract() {
                     write!(f, "boolean({v:?})")
@@ -683,6 +732,8 @@ impl PartialEq for TypeValue {
     fn eq(&self, rhs: &Self) -> bool {
         match (self, rhs) {
             (Self::Unknown, Self::Unknown) => true,
+            (Self::Pattern(lhs), Self::Pattern(rhs)) => lhs == rhs,
+            (Self::PatternSet, Self::PatternSet) => true,
             (
                 Self::String { value: lhs, .. },
                 Self::String { value: rhs, .. },
