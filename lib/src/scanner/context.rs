@@ -2294,8 +2294,8 @@ impl From<PatternSetHandle> for RuntimeObjectHandle {
     }
 }
 
-pub fn create_wasm_store_and_ctx<'r>(
-    rules: &'r Rules,
+pub fn create_wasm_store_and_ctx(
+    rules: &Rules,
 ) -> Pin<Box<Store<ScanContext<'static, 'static>>>> {
     create_wasm_store_and_ctx_with_session(rules, 0)
 }

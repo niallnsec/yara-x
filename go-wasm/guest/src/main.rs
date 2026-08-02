@@ -1753,7 +1753,7 @@ pub unsafe extern "C" fn go_yrx_scanner_slowest_rules_json(
     {
         let _ = scanner;
         let _ = n;
-        return pack_result(YRX_RESULT::YRX_NOT_SUPPORTED, 0);
+        pack_result(YRX_RESULT::YRX_NOT_SUPPORTED, 0)
     }
 
     #[cfg(feature = "rules-profiling")]
@@ -1799,7 +1799,7 @@ pub unsafe extern "C" fn go_yrx_scanner_clear_profiling_data(
     #[cfg(not(feature = "rules-profiling"))]
     {
         let _ = scanner;
-        return pack_result(YRX_RESULT::YRX_NOT_SUPPORTED, 0);
+        pack_result(YRX_RESULT::YRX_NOT_SUPPORTED, 0)
     }
 
     #[cfg(feature = "rules-profiling")]

@@ -336,18 +336,14 @@ impl<'src> ParserImpl<'src> {
         let mut seen = 0;
 
         let token_pos = loop {
-            match self.tokens.peek_token(i) {
-                Some(token) => {
-                    if token.is_trivia() {
-                        i += 1;
-                    } else if seen == n {
-                        break i;
-                    } else {
-                        seen += 1;
-                        i += 1;
-                    }
-                }
-                None => return None,
+            let token = self.tokens.peek_token(i)?;
+            if token.is_trivia() {
+                i += 1;
+            } else if seen == n {
+                break i;
+            } else {
+                seen += 1;
+                i += 1;
             }
         };
 

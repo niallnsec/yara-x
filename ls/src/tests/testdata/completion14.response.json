@@ -263,6 +263,25 @@
   {
     "additionalTextEdits": [
       {
+        "newText": "import \"locus\"\n",
+        "range": {
+          "end": {
+            "character": 0,
+            "line": 0
+          },
+          "start": {
+            "character": 0,
+            "line": 0
+          }
+        }
+      }
+    ],
+    "kind": 9,
+    "label": "locus"
+  },
+  {
+    "additionalTextEdits": [
+      {
         "newText": "import \"macho\"\n",
         "range": {
           "end": {

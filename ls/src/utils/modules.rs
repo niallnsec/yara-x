@@ -342,6 +342,8 @@ fn from_lookup(lookup: &Lookup) -> Vec<Segment> {
 
 pub fn ty_to_string(ty: &Type) -> String {
     match ty {
+        Type::Pattern => "pattern".to_string(),
+        Type::PatternSet => "pattern_set".to_string(),
         Type::Integer => "integer".to_string(),
         Type::Float => "float".to_string(),
         Type::Bool => "bool".to_string(),
@@ -383,6 +385,8 @@ mod tests {
 
     #[test]
     fn test_ty_to_string() {
+        assert_eq!(ty_to_string(&Type::Pattern), "pattern");
+        assert_eq!(ty_to_string(&Type::PatternSet), "pattern_set");
         assert_eq!(ty_to_string(&Type::Integer), "integer");
         assert_eq!(ty_to_string(&Type::Float), "float");
         assert_eq!(ty_to_string(&Type::Bool), "bool");

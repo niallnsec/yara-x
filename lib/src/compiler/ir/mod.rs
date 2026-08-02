@@ -673,10 +673,10 @@ impl IR {
     ///
     /// - Traverse the IR tree in **Depth-First Search (DFS)** order to compute
     ///   variable dependencies for each expression.
-    /// - When a node uses a variable, mark all its ancestors (up to the root)
-    ///   as dependent on that variable, unless the node is already marked
-    ///   dependent on a variable declared in a statement lower in the tree
-    ///   (closer to the leaves).
+    /// - When a node uses a variable, mark the node and all its ancestors (up
+    ///   to the root) as dependent on that variable, unless the node is already
+    ///   marked dependent on a variable declared in a statement lower in the
+    ///   tree (closer to the leaves).
     /// - This results in a dependency vector where each element corresponds to
     ///   an IR node, specifying the variable(s) upon which the corresponding
     ///   expression depends.
@@ -729,7 +729,12 @@ impl IR {
             };
 
             let symbol = match self.get(current_expr_id) {
-                Expr::Symbol(symbol) => symbol,
+                Expr::Symbol(symbol)
+                | Expr::PatternMatchVar { symbol, .. }
+                | Expr::PatternRefVar { symbol }
+                | Expr::PatternCountVar { symbol, .. }
+                | Expr::PatternOffsetVar { symbol, .. }
+                | Expr::PatternLengthVar { symbol, .. } => symbol,
                 _ => continue,
             };
 
@@ -747,20 +752,21 @@ impl IR {
                     Expr::ForIn(for_in) => {
                         for_in.variables.iter().any(|v| v.index() == var)
                     }
+                    Expr::ForOf(for_of) => for_of.for_vars.item.index() == var,
                     _ => false,
                 }) {
                     Some(stmt) => stmt,
                     None => continue,
                 };
 
-            // Iterate the ancestors of the current statement up to the
-            // statement that declared the variable (not included), and mark
-            // them as dependent on that variable.
-            for ancestor in self
-                .ancestors(current_expr_id)
-                .take_while(|ancestor| ancestor.ne(&stmt_declaring_var))
-            {
-                match &mut depends_on[ancestor.0 as usize] {
+            // Mark the current expression and its ancestors, up to the
+            // statement that declared the variable (not included), as
+            // dependent on that variable.
+            for dependent_expr in std::iter::once(current_expr_id).chain(
+                self.ancestors(current_expr_id)
+                    .take_while(|ancestor| ancestor.ne(&stmt_declaring_var)),
+            ) {
+                match &mut depends_on[dependent_expr.0 as usize] {
                     // If already depends on some variable that was defined by
                     // an inner expression, the existing dependency prevails.
                     // We rely on the fact that variables defined by an inner
@@ -786,7 +792,11 @@ impl IR {
             match self.get(current_expr_id) {
                 // Constants and `filesize` are fast and don't need to be moved
                 // out of loops.
-                Expr::Const(_) | Expr::Filesize | Expr::Symbol(_) => {}
+                Expr::Const(_)
+                | Expr::Filesize
+                | Expr::Symbol(_)
+                | Expr::PatternRef { .. }
+                | Expr::PatternRefVar { .. } => {}
                 // All other expressions could be moved out of loops, except
                 // those that are operands of a field access. That's because
                 // the operands of a field access can depend on the results

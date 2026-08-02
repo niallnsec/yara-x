@@ -28,6 +28,20 @@ func (r testErrReader) Read(_ []byte) (int, error) {
 	return 0, r.err
 }
 
+func guestWASMForTesting(t *testing.T) []byte {
+	t.Helper()
+
+	if path := os.Getenv("YARAX_GUEST_WASM"); path != "" {
+		wasm, err := os.ReadFile(path)
+		require.NoError(t, err)
+		return wasm
+	}
+
+	wasm, err := module.DecompressedWASM()
+	require.NoError(t, err)
+	return wasm
+}
+
 func resetGuestBootstrapForTesting(t *testing.T) {
 	t.Helper()
 
@@ -195,8 +209,7 @@ func TestInitialiseWithGuestWASMPath(t *testing.T) {
 	resetGuestBootstrapForTesting(t)
 	t.Cleanup(func() { resetGuestBootstrapForTesting(t) })
 
-	wasm, err := module.DecompressedWASM()
-	require.NoError(t, err)
+	wasm := guestWASMForTesting(t)
 
 	tmp, err := os.CreateTemp(t.TempDir(), "yarax-guest-*.wasm")
 	require.NoError(t, err)
@@ -215,8 +228,7 @@ func TestInitialiseWithGuestWASMReader(t *testing.T) {
 	resetGuestBootstrapForTesting(t)
 	t.Cleanup(func() { resetGuestBootstrapForTesting(t) })
 
-	wasm, err := module.DecompressedWASM()
-	require.NoError(t, err)
+	wasm := guestWASMForTesting(t)
 
 	require.NoError(t, Initialise(GuestWASMReader(bytes.NewReader(wasm))))
 	assert.NotNil(t, sharedGuestProgram)

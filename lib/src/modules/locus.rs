@@ -127,11 +127,10 @@ fn best_window_between_pattern_groups(
         for &right_pattern in right {
             if let Some(window) =
                 best_window_patterns(ctx, left_pattern, right_pattern)
+                && best
+                    .is_none_or(|current| is_better_window(window, current))
             {
-                if best.is_none_or(|current| is_better_window(window, current))
-                {
-                    best = Some(window);
-                }
+                best = Some(window);
             }
         }
     }
@@ -740,6 +739,7 @@ fn within_pair(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 #[module_export(name = "within")]
 fn within_triplet(
     _ctx: &ScanContext,
@@ -772,6 +772,8 @@ fn within_triplet_patterns(
 
 #[cfg(test)]
 mod tests {
+    use crate::compiler::Compiler;
+    use crate::scanner::Scanner;
     use crate::tests::rule_false;
     use crate::tests::rule_true;
     use crate::tests::test_rule;
@@ -1037,6 +1039,36 @@ mod tests {
             }"#,
             b"AXAxxxxxxxxxxxxBBBxxAAAxxBBB"
         );
+    }
+
+    #[test]
+    fn optimized_current_for_of_pattern_stays_in_scope() {
+        let mut compiler = Compiler::new();
+
+        compiler
+            .condition_optimization(true)
+            .add_source(
+                r#"
+                import "locus"
+                rule test {
+                    strings:
+                        $a = "A"
+                        $b = "B"
+                    condition:
+                        for any i in (1..2) : (
+                            for any of ($a, $b) : (
+                                locus.distance($, $b) == 0
+                            )
+                        )
+                }"#,
+            )
+            .unwrap();
+
+        let rules = compiler.build();
+        let mut scanner = Scanner::new(&rules);
+        let results = scanner.scan(b"AB").unwrap();
+
+        assert_eq!(results.matching_rules().len(), 1);
     }
 }
 

@@ -41,6 +41,11 @@
   },
   {
     "kind": 9,
+    "label": "locus",
+    "preselect": true
+  },
+  {
+    "kind": 9,
     "label": "macho",
     "preselect": true
   },
